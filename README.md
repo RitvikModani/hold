@@ -72,6 +72,26 @@ never more, because one bad day should not erase a week.
 Your current rung is *replayed from the log* rather than stored, so there is no
 saved value that can fall out of step with your actual history.
 
+## Sync (optional)
+
+Leave it unconfigured and the app runs on `localStorage` alone — the sync UI
+does not render at all. Nothing is ever gated behind an account.
+
+To turn it on: create a Supabase project, run `supabase/schema.sql`, enable the
+Google provider under Authentication → Providers, and put the project URL and
+anon key in `.env` as `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`.
+
+Merging two devices is a set union. Reps are immutable events with
+client-generated ids, so there is no update path, nothing to conflict over, and
+nothing that can be lost — the merge sorts by time because the ladder replays
+the log in order, and breaks ties on id so both devices converge on identical
+output.
+
+Row-level security is what protects the data. The anon key is public by design
+and safe to ship in the bundle; the Google client secret lives in the Supabase
+dashboard and never enters this repo. Your Google OAuth redirect URIs need to
+list both your dev origin and your deployed origin, or the callback bounces.
+
 ## Notes
 
 - `?seed=200` fills the log with a synthetic six-week history so you can see the
