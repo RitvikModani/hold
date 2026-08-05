@@ -2,42 +2,42 @@
 @import '@fontsource-variable/inter';
 
 /*
-  Two moods, one system.
+  Hold's visual argument: this is an instrument, not a feed.
 
-  Watching: the interface gets out of the way — near-black, no chrome, a single
-  hairline ring, and a blurred still of the video itself filling what would
-  otherwise be dead letterbox bars. Stats: dense instrument panel, tabular
-  numerals, the feel of a training log rather than a dashboard.
+  Everything is near-black and quiet, and exactly one number per screen is
+  amber. If three things glow, nothing does — and a tool whose whole thesis is
+  against manufactured stimulation cannot itself be shouting for attention.
 
-  One chromatic colour only. Amber carries every signal that matters; failure
-  shows as things going hollow and grey, never red. That restraint is what
-  keeps this from looking like every other dark-mode app — and a tool whose
-  whole argument is against manufactured stimulation should not itself be
-  visually shouting.
+  Surfaces are layered rather than flat: a faint top-down gradient plus a
+  hairline that catches light at the top edge, so panels read as physical
+  rather than as boxes drawn on a background. Failure never turns red; it goes
+  hollow and grey. Red would make a missed rep feel like an error, and a missed
+  rep is data.
 
-  Inter is self-hosted rather than pulled from a CDN: it renders instantly,
-  survives offline, and a font loading late would undercut the point of the app.
+  Inter is self-hosted: instant paint, works offline, no layout shift from a
+  font landing late.
 */
 
 @theme {
-  --color-void: #08080a;
-  --color-surface: #101014;
-  --color-raised: #17171d;
-  --color-line: #23232b;
-  --color-line-bright: #34343f;
+  --color-void: #07070a;
+  --color-surface: #101015;
+  --color-raised: #17171e;
+  --color-line: #212129;
+  --color-line-bright: #33333f;
 
-  --color-ink: #f4f4f6;
-  --color-ink-dim: #9a9aa6;
-  --color-ink-faint: #6a6a78;
+  --color-ink: #f5f5f7;
+  --color-ink-dim: #9d9dab;
+  --color-ink-faint: #6b6b7a;
 
   --color-amber: #ffb703;
-  --color-amber-dim: #8a6410;
+  --color-amber-dim: #7d5a0e;
 
   --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Segoe UI Mono', Menlo, Consolas,
     monospace;
   --font-sans: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --radius-card: 18px;
 }
 
 html,
@@ -60,36 +60,53 @@ body {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum' 1;
+  letter-spacing: -0.02em;
 }
 
 .label {
   font-family: var(--font-mono);
   font-size: 0.6875rem;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--color-ink-faint);
+}
+
+/* The one display treatment. Reserved for the single number that matters on
+   each screen — the rung, the ceiling, a new personal best. */
+.display {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.045em;
+  line-height: 0.9;
+  color: var(--color-amber);
+}
+
+/*
+  Layered card. The gradient plus the brighter top hairline reads as a surface
+  lit from above, which keeps a dark UI from flattening into one grey plane.
+*/
+.card {
+  position: relative;
+  border-radius: var(--radius-card);
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.035) 0%, rgb(255 255 255 / 0) 42%),
+    linear-gradient(180deg, var(--color-raised) 0%, var(--color-surface) 100%);
+  border: 1px solid var(--color-line);
+  transition:
+    border-color 200ms var(--ease-out-quint),
+    transform 200ms var(--ease-out-quint);
+}
+
+.card-hover:hover {
+  border-color: var(--color-line-bright);
 }
 
 .hairline {
   border: 1px solid var(--color-line);
 }
 
-/* Faint scanline wash. Sells the instrument-panel read without costing legibility. */
-.panel {
-  background:
-    linear-gradient(var(--color-surface), var(--color-surface)),
-    repeating-linear-gradient(
-      0deg,
-      rgb(255 255 255 / 0.013) 0px,
-      rgb(255 255 255 / 0.013) 1px,
-      transparent 1px,
-      transparent 3px
-    );
-  background-blend-mode: overlay;
-}
-
-/* Loading placeholder: a band of light travelling left to right across the
-   element's real footprint, so nothing shifts when content arrives. */
+/* Loading placeholder: a band of light travelling across the element's real
+   footprint, so nothing shifts when content arrives. */
 .shimmer {
   position: relative;
   overflow: hidden;
@@ -105,7 +122,7 @@ body {
     90deg,
     transparent 0%,
     rgb(255 255 255 / 0.04) 45%,
-    rgb(255 255 255 / 0.07) 50%,
+    rgb(255 255 255 / 0.075) 50%,
     rgb(255 255 255 / 0.04) 55%,
     transparent 100%
   );
@@ -121,7 +138,7 @@ body {
 @keyframes hold-rise {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(12px);
   }
   to {
     opacity: 1;
@@ -130,13 +147,14 @@ body {
 }
 
 .rise {
-  animation: hold-rise 0.5s var(--ease-out-quint) both;
+  animation: hold-rise 0.55s var(--ease-out-quint) both;
 }
 
 /* Keyboard users must always be able to see where they are. */
 :focus-visible {
   outline: 2px solid var(--color-amber);
   outline-offset: 2px;
+  border-radius: 6px;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -11,9 +11,9 @@ import {
 } from '../lib/leaderboard'
 import { load } from '../lib/store'
 import { useAuth } from '../hooks/useAuth'
-import { Button, ErrorState, Screen, Skeleton, TopBar, fmtDuration } from '../components/ui'
+import { Button, ErrorState, Skeleton, fmtDuration } from '../components/ui'
 
-export function Leaderboard({ onBack }: { onBack: () => void }) {
+export function Leaderboard() {
   const { user, loading: authLoading, signInWithGoogle } = useAuth()
   const [rows, setRows] = useState<BoardRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -85,21 +85,21 @@ export function Leaderboard({ onBack }: { onBack: () => void }) {
             rebuild. Your stats and streak keep working without it.
           </>
         }
-        actionLabel="Back"
-        onAction={onBack}
       />
     )
   }
 
   return (
-    <Screen className="pb-10">
-      <TopBar title="leaderboard" onBack={onBack} />
-
-      <div className="space-y-6 px-5 lg:px-8">
-        <p className="max-w-prose text-sm leading-relaxed text-[var(--color-ink-dim)]">
-          Ranked by focus ceiling — the longest video you have held all the way through. Not by
-          minutes watched, because that would only reward leaving a tab open.
-        </p>
+    <div className="mx-auto w-full max-w-3xl px-6 py-10 lg:px-10 lg:py-14">
+      <div className="space-y-6">
+        <div className="rise">
+          <div className="label">leaderboard</div>
+          <h1 className="mt-3 text-3xl tracking-tight">Ranked by ceiling.</h1>
+          <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-[var(--color-ink-dim)]">
+            The longest video you have held all the way through — not minutes watched, because that
+            would only reward leaving a tab open.
+          </p>
+        </div>
 
         {error && (
           <div
@@ -215,7 +215,7 @@ export function Leaderboard({ onBack }: { onBack: () => void }) {
           </section>
         </div>
       </div>
-    </Screen>
+    </div>
   )
 }
 
