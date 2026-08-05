@@ -168,6 +168,24 @@ function Watch({
   const driftRef = useRef<Rep['driftEvents']>([])
   const touchStartY = useRef<number | null>(null)
   const wheelLock = useRef(false)
+  // Most of the pool is Shorts, because 36-180s is exactly the Shorts range.
+  // A vertical video inside a 16:9 frame pillarboxes into a sliver, so the
+  // frame has to match the video. maxresdefault is 1080x1920 for a Short and
+  // 1280x720 for regular video, which is enough to tell them apart before
+  // playback starts.
+  const [portrait, setPortrait] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    setPortrait(null)
+    const probe = new Image()
+    probe.onload = () => setPortrait(probe.naturalHeight > probe.naturalWidth)
+    probe.onerror = () => setPortrait(false)
+    probe.src = `https://i.ytimg.com/vi/${video.videoId}/maxresdefault.jpg`
+    return () => {
+      probe.onload = null
+      probe.onerror = null
+    }
+  }, [video.videoId])
 
   const player = useYouTubePlayer({
     videoId: video.videoId,
@@ -254,7 +272,7 @@ function Watch({
       {/* Laptop-only rail. On a phone this is hidden and the video owns the
           screen; on a wide display the empty flanks become the instrument
           panel instead of dead margin. */}
-      <aside className="hidden w-72 shrink-0 flex-col justify-between border-r border-[var(--color-line)] p-7 lg:flex">
+      <aside className="hidden w-72 shrink-0 flex-col gap-8 border-r border-[var(--color-line)] p-7 lg:flex">
         <div>
           <button
             onClick={onExit}
@@ -291,24 +309,25 @@ function Watch({
           </div>
         </div>
 
-        <div className="space-y-5">
+        <div className="space-y-4 border-t border-[var(--color-line)] pt-6">
           <RailStat label="ceiling" value={ceilingSec ? fmtDuration(ceilingSec) : '—'} />
           <RailStat label="drifts" value={String(drift.driftEvents.length)} />
-          <p className="text-[11px] leading-relaxed text-[var(--color-ink-faint)]">
-            Scroll, swipe or press ↓ to move on. It costs the rep.
-          </p>
         </div>
+
+        <p className="mt-auto text-[11px] leading-relaxed text-[var(--color-ink-faint)]">
+          Scroll, swipe or press ↓ to move on. It costs the rep.
+        </p>
       </aside>
 
       <main className="relative flex flex-1 flex-col">
         {/* Blurred still of the video itself, filling what would otherwise be
             dead black bars around a 16:9 frame in a tall viewport. */}
         <div
-          className="pointer-events-none absolute inset-0 scale-110 bg-cover bg-center opacity-35 blur-3xl saturate-150"
+          className="pointer-events-none absolute inset-0 scale-125 bg-cover bg-center opacity-70 blur-2xl saturate-150"
           style={{ backgroundImage: `url(https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg)` }}
           aria-hidden
         />
-        <div className="pointer-events-none absolute inset-0 bg-[var(--color-void)]/55" aria-hidden />
+        <div className="pointer-events-none absolute inset-0 bg-[var(--color-void)]/25" aria-hidden />
 
         <header className="relative flex items-center justify-between px-5 py-4 lg:px-8">
           <button
@@ -326,8 +345,19 @@ function Watch({
           </div>
         </header>
 
-        <div className="relative flex flex-1 items-center justify-center lg:px-8 lg:pb-6">
-          <div className="relative aspect-video w-full overflow-hidden bg-black shadow-2xl shadow-black/60 lg:max-h-full lg:w-auto lg:max-w-5xl lg:rounded-2xl lg:ring-1 lg:ring-white/10">
+        <div className="relative flex min-h-0 flex-1 items-center justify-center px-4 pb-2 lg:px-8 lg:pb-6">
+          {/* Sized from viewport height rather than an auto width, which
+              collapsed to a sliver on wide screens. The frame follows the
+              video's real orientation so the content is always the biggest
+              thing on the page. */}
+          <div
+            className="relative h-full overflow-hidden rounded-2xl bg-black shadow-2xl shadow-black/70 ring-1 ring-white/10"
+            style={{
+              aspectRatio: portrait ? '9 / 16' : '16 / 9',
+              maxWidth: '100%',
+              maxHeight: '100%',
+            }}
+          >
             <div ref={player.containerRef} className="h-full w-full" />
 
             {/* Sits over the iframe while it plays. Touches on an iframe never
