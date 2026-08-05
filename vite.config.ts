@@ -5,6 +5,10 @@ import { VitePWA } from 'vite-plugin-pwa'
 import path from 'node:path'
 
 export default defineConfig({
+  // GitHub Pages serves this repo at /hold/, not at the domain root, so every
+  // asset URL needs that prefix. Set only by the deploy workflow — local dev
+  // and any root-domain host (Vercel, Netlify) keep '/' and need no change.
+  base: process.env.VITE_BASE || '/',
   plugins: [
     react(),
     tailwindcss(),
@@ -19,7 +23,9 @@ export default defineConfig({
         background_color: '#0a0a0b',
         display: 'standalone',
         orientation: 'portrait',
-        start_url: '/',
+        // No explicit start_url — the plugin derives it from `base`, so it
+        // stays correct whether the app is served from a domain root or from
+        // a /hold/ subpath on GitHub Pages.
         icons: [
           { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml' },
           { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' },
