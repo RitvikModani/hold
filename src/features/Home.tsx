@@ -3,6 +3,7 @@ import { PROMOTE_AFTER, RUNGS, ladderState } from '../lib/ladder'
 import { currentStreakDays } from '../lib/stats'
 import { load } from '../lib/store'
 import { Button, Screen, fmtDuration } from '../components/ui'
+import { SyncNudge } from './Sync'
 
 export function Home({ onStart, onStats }: { onStart: () => void; onStats: () => void }) {
   const state = useMemo(() => load(), [])
@@ -38,6 +39,7 @@ export function Home({ onStart, onStats }: { onStart: () => void; onStats: () =>
           <Button variant="quiet" full onClick={onStats}>
             Stats
           </Button>
+          <SyncNudge repCount={state.reps.length} streakDays={streak} />
         </div>
       </div>
     </Screen>

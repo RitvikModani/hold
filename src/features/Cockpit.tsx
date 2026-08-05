@@ -1,12 +1,15 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { isSuccess, ladderState } from '../lib/ladder'
 import { dailyFocusMinutes, driftSeries, ladderSeries, summarise } from '../lib/stats'
 import { exportJson, load } from '../lib/store'
 import { DayBars, DriftChart, Heatmap, LadderChart } from '../components/charts'
 import { Button, Screen, StatTile, TopBar, fmtDuration } from '../components/ui'
+import { SyncPanel } from './Sync'
 
 export function Cockpit({ onBack }: { onBack: () => void }) {
-  const state = useMemo(() => load(), [])
+  // Bumped after a sync so every stat below recomputes against the merged log.
+  const [rev, setRev] = useState(0)
+  const state = useMemo(() => load(), [rev])
   const now = useMemo(() => new Date(), [])
 
   const s = useMemo(() => summarise(state.reps, now), [state.reps, now])
@@ -24,11 +27,18 @@ export function Cockpit({ onBack }: { onBack: () => void }) {
     return (
       <Screen>
         <TopBar title="stats" onBack={onBack} />
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-8 text-center">
-          <p className="text-sm text-[var(--color-ink-dim)]">Nothing here yet.</p>
-          <p className="text-xs text-[var(--color-ink-faint)]">
-            Run one session and this page starts telling you things you did not know.
-          </p>
+        <div className="flex flex-1 flex-col justify-center gap-4 px-5 text-center">
+          <div>
+            <p className="text-sm text-[var(--color-ink-dim)]">Nothing here yet.</p>
+            <p className="mt-1 text-xs text-[var(--color-ink-faint)]">
+              Run one session and this page starts telling you things you did not know.
+            </p>
+          </div>
+          {/* Also reachable at zero reps on purpose — a new device has to be
+              able to sign in and pull down a history it does not have yet. */}
+          <div className="text-left">
+            <SyncPanel onChanged={() => setRev((r) => r + 1)} />
+          </div>
         </div>
       </Screen>
     )
@@ -116,6 +126,8 @@ export function Cockpit({ onBack }: { onBack: () => void }) {
             ))}
           </ul>
         </Panel>
+
+        <SyncPanel onChanged={() => setRev((r) => r + 1)} />
 
         <Button
           full
