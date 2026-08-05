@@ -28,3 +28,27 @@ export const supabase: SupabaseClient | null =
     : null
 
 export const syncAvailable = supabase !== null
+
+/**
+ * Supabase rejects with plain objects carrying `message`/`hint`/`code`, not
+ * Error instances — so an `err instanceof Error` check silently discards the
+ * only useful part and leaves the user staring at a generic failure. This digs
+ * the real reason out, and translates the failures people actually hit.
+ */
+export function describeError(err: unknown): string {
+  const e = err as { message?: string; hint?: string; code?: string } | null
+  const raw = (e?.message ?? '').trim()
+
+  if (!raw) return 'no reason given by the server'
+  // 42P01: relation does not exist — the schema was never run.
+  if (e?.code === '42P01' || /relation .* does not exist/i.test(raw)) {
+    return 'that table does not exist yet — run supabase/schema.sql in the SQL editor'
+  }
+  if (/JWT|not authenticated|invalid claim/i.test(raw)) {
+    return 'your session expired — sign out and back in'
+  }
+  if (/Failed to fetch|NetworkError/i.test(raw)) {
+    return 'could not reach Supabase — check your connection and the project URL'
+  }
+  return e?.hint ? `${raw} (${e.hint})` : raw
+}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { syncAvailable } from '../lib/supabase'
+import { describeError, syncAvailable } from '../lib/supabase'
 import { syncAll } from '../lib/sync'
 import { load, replaceAll } from '../lib/store'
 import { useAuth } from '../hooks/useAuth'
@@ -27,7 +27,7 @@ export function SyncPanel({ onChanged }: { onChanged?: () => void }) {
       onChanged?.()
     } catch (err) {
       setState('error')
-      setNote(err instanceof Error ? err.message : 'sync failed')
+      setNote(describeError(err))
     }
   }, [user, onChanged])
 

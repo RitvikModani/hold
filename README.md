@@ -1,15 +1,21 @@
 # Hold
 
-An attention trainer. Serves you progressively longer videos — 45 seconds up to a
+An attention trainer. Serves progressively longer videos — 45 seconds up to a
 hard three-minute cap — and measures whether you actually held them.
 
-## Why it is built this way
+**Live:** https://ritvikmodani.github.io/hold/
+
+## Why it works this way
 
 Watching longer videos does not, on its own, train attention. A well-made video
-holds your attention *for* you; that is its job. So every rep here ends in a
-**free-recall prompt**, and the app records **drift events** whenever the tab
-loses focus. Those two things are what turn passive watching into an active task,
-which is the only form of attention training the evidence actually supports.
+holds your attention *for* you; that is its entire job. Every protocol in the
+attention-training literature that produces measurable change trains an **active
+task**, not passive exposure.
+
+So every rep here ends in a **free-recall prompt** — one sentence, from memory,
+before you are shown what the video actually said — and the app records **drift
+events** whenever focus leaves the player. Those two things are the difference
+between measuring attention and measuring video tolerance.
 
 Sessions are **five reps and then they stop**. There is no infinite scroll. An
 endless feed of longer videos would just be a slower TikTok.
@@ -18,32 +24,47 @@ endless feed of longer videos would just be a slower TikTok.
 
 ```bash
 npm install
+npm run dev
 ```
 
-Then get a YouTube key — free tier, about five minutes:
+Videos work immediately — the harvested pool ships with the repo.
 
-1. [console.cloud.google.com](https://console.cloud.google.com) → new project
-2. Enable **YouTube Data API v3**
-3. Credentials → Create credentials → API key
-4. `cp .env.example .env` and paste the key in
+### Refreshing the content pool (optional)
 
 ```bash
+cp .env.example .env    # then paste a YouTube Data API v3 key
 npm run harvest
 ```
 
-That fills `public/content/pool.json` from the channel list in
-`content/channels.json`. It costs roughly **100 of your 10,000 daily quota units
-and zero search calls** — it resolves each channel handle to its uploads playlist
-and pages that, rather than using `search.list`, which would burn 100 units *and*
-one of only 100 daily search calls per query.
+Costs roughly **100 of your 10,000 daily quota units and zero search calls**. It
+resolves each channel handle to its uploads playlist and pages that, rather than
+using `search.list` — which costs 100 units *and* one of only 100 daily search
+calls per query. The key never reaches the browser.
 
-The key stays on your machine. The app itself only ever fetches the static
-`pool.json`, so it works offline against whatever it last downloaded.
+### Sync and leaderboard (optional)
+
+Leave it unconfigured and the app runs on `localStorage` alone; the sync and
+board UI never render. Nothing is ever gated behind an account.
+
+1. Create a project at [supabase.com](https://supabase.com)
+2. Open `supabase/schema.sql`, copy its **contents** into the Supabase SQL
+   editor and run them (idempotent — safe to re-run)
+3. Authentication → Providers → Google, and paste your OAuth client ID and
+   secret **there**
+4. Put the project URL and anon key in `.env` as `VITE_SUPABASE_URL` and
+   `VITE_SUPABASE_ANON_KEY`, then restart the dev server
+
+Add every origin you use — `http://localhost:5173`, your deployed URL — to both
+Google's authorized redirect URIs and Supabase's redirect allowlist, or sign-in
+bounces.
+
+## Commands
 
 ```bash
-npm run dev      # http://localhost:5173
-npm test         # ladder + stats logic
-npm run build    # static output for Vercel
+npm run dev       # dev server
+npm test          # 49 tests over the ladder, stats and merge logic
+npm run build     # static output
+npm run harvest   # refresh the video pool
 ```
 
 ## Structure
@@ -51,62 +72,69 @@ npm run build    # static output for Vercel
 | | |
 |---|---|
 | `scripts/harvest.mjs` | Fills the content pool. The only thing that talks to Google. |
-| `src/lib/ladder.ts` | Rung math. Promotion, demotion, what counts as a clean rep. Pure. |
+| `src/lib/ladder.ts` | Rung math: promotion, demotion, what counts as a clean rep. Pure. |
 | `src/lib/stats.ts` | Every derived number on the stats page. Pure, `now` injected. |
+| `src/lib/sync.ts` | Two-device merge. Pure set union over immutable events. |
+| `src/lib/leaderboard.ts` | Publishes aggregates only — never reps or recall text. |
 | `src/lib/store.ts` | Append-only log in `localStorage`. |
-| `src/hooks/` | YouTube IFrame wrapper, attention-drift recorder. |
-| `src/features/` | Home, Session, Cockpit. |
+| `src/hooks/` | YouTube IFrame wrapper, attention-drift recorder, auth. |
+| `src/features/` | Home, Session, Cockpit, Leaderboard, Sync. |
+| `supabase/schema.sql` | Tables and row-level security policies. |
 
-`ladder.ts` and `stats.ts` are pure functions with 40 tests, because a bug in
-either would make every number the app shows a quiet lie.
+`ladder.ts`, `stats.ts` and `sync.ts` are pure functions with 49 tests, because
+a bug in any of them would make every number the app shows a quiet lie.
 
 ## The ladder
 
 Rungs: 45, 60, 75, 90, 110, 130, 150, 165, 180 seconds.
 
-A rep counts only if you watched ≥95% of it, drifted for less than 10% of its
-length, **and** wrote something from memory afterwards. Three clean reps on
-distinct videos moves you up a rung. Two consecutive misses moves you down one —
-never more, because one bad day should not erase a week.
+A rep counts only if you watched at least 95% of it, drifted for less than 10%
+of its length, **and** wrote something from memory afterwards. Three clean reps
+on distinct videos moves you up a rung. Two consecutive misses moves you down
+one — never more, because one bad day should not erase a week.
 
-Your current rung is *replayed from the log* rather than stored, so there is no
-saved value that can fall out of step with your actual history.
+Your current rung is *replayed from the log* rather than stored, so no saved
+value can contradict the history behind it.
 
-## Sync (optional)
+## Sync
 
-Leave it unconfigured and the app runs on `localStorage` alone — the sync UI
-does not render at all. Nothing is ever gated behind an account.
+Reps are immutable events with client-generated ids, so merging two devices is a
+**set union** — no conflicts, nothing lost. The merge sorts by time because the
+ladder replays the log in order, and breaks ties on id so both devices converge
+on identical output.
 
-To turn it on:
+Row-level security is the security model. The anon key is public by design and
+ships in the bundle; it is safe only because every policy restricts rows to
+`auth.uid()`. Adding a table without RLS would expose it.
 
-1. Create a Supabase project
-2. Open `supabase/schema.sql`, copy its **contents**, paste them into the
-   Supabase SQL editor and run them (it is idempotent, so re-running is safe)
-3. Authentication → Providers → Google, and paste your Google OAuth client ID
-   and secret there
-4. Put the project URL and anon key in `.env` as `VITE_SUPABASE_URL` and
-   `VITE_SUPABASE_ANON_KEY`
+## Leaderboard
 
-Merging two devices is a set union. Reps are immutable events with
-client-generated ids, so there is no update path, nothing to conflict over, and
-nothing that can be lost — the merge sorts by time because the ladder replays
-the log in order, and breaks ties on id so both devices converge on identical
-output.
+Ranked by **focus ceiling**, not minutes watched. Minutes would reward leaving a
+video running in a dead tab — the exact behaviour the drift detector exists to
+catch. A ceiling requires 95% watched, under 10% drift, and a typed recall
+answer, so it is hard to post without having actually paid attention.
 
-Row-level security is what protects the data. The anon key is public by design
-and safe to ship in the bundle; the Google client secret lives in the Supabase
-dashboard and never enters this repo. Your Google OAuth redirect URIs need to
-list both your dev origin and your deployed origin, or the callback bounces.
+Only four aggregates are published — ceiling, clean reps, minutes, streak — plus
+a display name you choose. Your reps, the videos you watched and everything you
+wrote never leave your device.
 
-## Notes
+## Interface notes
 
-- `?seed=200` fills the log with a synthetic six-week history so you can see the
-  stats screens populated. `?seed=0` wipes it.
-- The player deliberately requires a tap to begin each rep. Browsers block
-  unmuted autoplay without a gesture, and muted playback is worthless for videos
-  that are someone explaining something.
-- If a video fails to load within 8 seconds it is blacklisted and swapped out.
-  Some unavailable videos fire no error at all, so silence has to be treated as
-  failure or the session hangs on that rep forever.
-- 16:9 video in a 9:16 viewport means letterboxing. The bands are used as the
-  instrument surround rather than pretended away.
+- **Phone:** the video owns the screen. Swipe up to move on.
+- **Laptop:** a side rail carries rung, rep progress, ceiling and live drift
+  count, so wide screens do not waste their flanks. Scroll or press `↓` to move
+  on, `Esc` to cancel.
+- Only the **first** video of a session needs a tap. Browsers require one
+  gesture before unmuted playback; after that, reps start on their own.
+- A blurred still of the video fills the letterbox bars, since YouTube is 16:9
+  and phones are not.
+- `?seed=200` fills the log with a synthetic history to see the stats populated.
+  `?seed=0` wipes it.
+
+## Known constraints
+
+- If a video neither loads nor errors within 8 seconds it is blacklisted and
+  swapped. Some unavailable videos fire no error at all, so silence has to be
+  treated as failure or the session hangs forever.
+- Skipping is always allowed, but costs the rep and sits behind a five-second
+  pause. The friction is the point.

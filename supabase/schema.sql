@@ -47,3 +47,53 @@ drop policy if exists "delete own reps" on public.reps;
 create policy "delete own reps"
   on public.reps for delete
   using (auth.uid() = user_id);
+
+
+-- ---------------------------------------------------------------------------
+-- Leaderboard.
+--
+-- Holds published aggregates only — never reps, video ids or recall text. That
+-- is what lets the board be readable by everyone without exposing what anyone
+-- actually watched or wrote.
+--
+-- Ranking is by focus ceiling, deliberately. Ranking by minutes watched would
+-- reward leaving a video running in a dead tab; a ceiling requires 95% watched,
+-- under 10% drift, and a typed recall answer, so it is hard to post without
+-- actually having paid attention.
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.profiles (
+  id               uuid primary key references auth.users (id) on delete cascade,
+  display_name     text not null default 'anonymous',
+  ceiling_sec      integer not null default 0,
+  clean_reps       integer not null default 0,
+  focused_minutes  integer not null default 0,
+  streak_days      integer not null default 0,
+  updated_at       timestamptz not null default now(),
+
+  constraint display_name_length check (char_length(display_name) between 1 and 24),
+  -- Nothing the app can produce exceeds the three-minute cap. A larger number
+  -- did not come from using the app.
+  constraint ceiling_within_cap check (ceiling_sec between 0 and 180)
+);
+
+create index if not exists profiles_ceiling_idx
+  on public.profiles (ceiling_sec desc, clean_reps desc);
+
+alter table public.profiles enable row level security;
+
+drop policy if exists "leaderboard is public" on public.profiles;
+create policy "leaderboard is public"
+  on public.profiles for select
+  using (true);
+
+drop policy if exists "insert own profile" on public.profiles;
+create policy "insert own profile"
+  on public.profiles for insert
+  with check (auth.uid() = id);
+
+drop policy if exists "update own profile" on public.profiles;
+create policy "update own profile"
+  on public.profiles for update
+  using (auth.uid() = id)
+  with check (auth.uid() = id);
