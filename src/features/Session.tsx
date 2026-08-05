@@ -9,6 +9,7 @@ import { Button, ProgressRing, fmtDuration } from '../components/ui'
 
 const REPS_PER_SESSION = 5
 const SKIP_GATE_SEC = 5
+const SWIPE_THRESHOLD_PX = 60
 
 type Phase = 'loading' | 'nopool' | 'watching' | 'recall' | 'reveal' | 'ceiling' | 'done'
 
@@ -150,6 +151,20 @@ function Watch({
   const [skipGate, setSkipGate] = useState<number | null>(null)
   const watchedRef = useRef(0)
   const driftRef = useRef<Rep['driftEvents']>([])
+  const touchStartY = useRef<number | null>(null)
+
+  // Swipe up to move on, as the gesture expects. It opens the skip gate rather
+  // than jumping straight to the next video: the whole point of the app is that
+  // leaving early is a decision you notice making, not a reflex.
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchStartY.current = e.touches[0].clientY
+  }
+  const onTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartY.current === null) return
+    const travelled = touchStartY.current - e.changedTouches[0].clientY
+    touchStartY.current = null
+    if (travelled > SWIPE_THRESHOLD_PX && skipGate === null) setSkipGate(SKIP_GATE_SEC)
+  }
 
   const player = useYouTubePlayer({
     videoId: video.videoId,
@@ -173,7 +188,11 @@ function Watch({
   }, [skipGate])
 
   return (
-    <div className="flex h-full flex-col bg-[var(--color-void)]">
+    <div
+      className="flex h-full touch-none flex-col bg-[var(--color-void)]"
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+    >
       <div className="flex items-center justify-between px-5 py-4">
         <div className="label">
           rep {repNumber} / {REPS_PER_SESSION}
@@ -192,11 +211,18 @@ function Watch({
       <div className="flex flex-1 items-center justify-center">
         <div className="relative aspect-video w-full bg-black">
           <div ref={player.containerRef} className="h-full w-full" />
+
+          {/* Sits over the iframe while it plays. Touches on an iframe never
+              reach the parent, so without this the swipe would only work on the
+              black bands. It also means a stray tap can never surface YouTube's
+              own chrome — title, share, "Watch on YouTube" — mid-rep. */}
+          {player.status === 'playing' && <div className="absolute inset-0" aria-hidden />}
+
           {player.status !== 'playing' && player.status !== 'paused' && (
             <button
               onClick={player.play}
               disabled={player.status !== 'ready'}
-              className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/85 disabled:cursor-default"
+              className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black disabled:cursor-default"
             >
               {player.status === 'ready' ? (
                 <>

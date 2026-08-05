@@ -77,9 +77,15 @@ saved value that can fall out of step with your actual history.
 Leave it unconfigured and the app runs on `localStorage` alone — the sync UI
 does not render at all. Nothing is ever gated behind an account.
 
-To turn it on: create a Supabase project, run `supabase/schema.sql`, enable the
-Google provider under Authentication → Providers, and put the project URL and
-anon key in `.env` as `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`.
+To turn it on:
+
+1. Create a Supabase project
+2. Open `supabase/schema.sql`, copy its **contents**, paste them into the
+   Supabase SQL editor and run them (it is idempotent, so re-running is safe)
+3. Authentication → Providers → Google, and paste your Google OAuth client ID
+   and secret there
+4. Put the project URL and anon key in `.env` as `VITE_SUPABASE_URL` and
+   `VITE_SUPABASE_ANON_KEY`
 
 Merging two devices is a set union. Reps are immutable events with
 client-generated ids, so there is no update path, nothing to conflict over, and
