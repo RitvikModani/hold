@@ -1,8 +1,9 @@
-import { Suspense, lazy, useMemo } from 'react'
+import { Suspense, lazy, useMemo, useState } from 'react'
 import { PROMOTE_AFTER, RUNGS, ladderState } from '../lib/ladder'
 import { currentStreakDays, driftRatePerMin, totalFocusedMinutes } from '../lib/stats'
 import { load } from '../lib/store'
 import { Button, fmtDuration } from '../components/ui'
+import { GenrePicker } from './Topics'
 
 // Lazy so the Supabase client stays out of the entry chunk. This is one
 // optional line of text; it is not worth 54 kB on first load.
@@ -16,6 +17,9 @@ export function Home({ onStart }: { onStart: () => void }) {
   const minutes = useMemo(() => totalFocusedMinutes(state.reps), [state.reps])
   const drift = useMemo(() => driftRatePerMin(state.reps), [state.reps])
   const fresh = state.reps.length === 0
+  const [genreRev, setGenreRev] = useState(0)
+  const genres = useMemo(() => load().genres, [genreRev])
+  const needsGenres = genres.length === 0
 
   return (
     <div className="mx-auto w-full max-w-2xl px-6 py-10 lg:px-10 lg:py-16">
@@ -38,10 +42,23 @@ export function Home({ onStart }: { onStart: () => void }) {
         <Ladder index={ladder.rungIndex} banked={ladder.towardPromotion} />
       </div>
 
+      {/* Asked once, up front, before the first session — so the very first
+          reel is already something you said you wanted. */}
+      {needsGenres && (
+        <div className="rise mt-10 max-w-xl" style={{ animationDelay: '100ms' }}>
+          <GenrePicker onSaved={() => setGenreRev((r) => r + 1)} />
+        </div>
+      )}
+
       <div className="rise mt-10 max-w-md" style={{ animationDelay: '120ms' }}>
         <Button variant="primary" full onClick={onStart}>
           {fresh ? 'Start your first session' : 'Start session'}
         </Button>
+        {!needsGenres && (
+          <div className="mt-4">
+            <GenrePicker compact onSaved={() => setGenreRev((r) => r + 1)} />
+          </div>
+        )}
         <Suspense fallback={null}>
           <div className="mt-3">
             <SyncNudge repCount={state.reps.length} streakDays={streak} />

@@ -45,7 +45,10 @@ export function Session({ onExit }: { onExit: () => void }) {
         ceilingRef.current = ladder.ceilingSec
         setRungSec(ladder.rungSec)
         // Spare picks so an unplayable video can be swapped without a refetch.
-        const picked = pickForRung(p, ladder.rungSec, seenVideoIds(state), REPS_PER_SESSION + 3)
+        const picked = pickForRung(p, ladder.rungSec, seenVideoIds(state), REPS_PER_SESSION + 3, {
+          reps: state.reps,
+          genres: state.genres,
+        })
         setPool(p)
         setQueue(picked)
         setPhase(picked.length === 0 ? 'nopool' : 'watching')
@@ -92,7 +95,10 @@ export function Session({ onExit }: { onExit: () => void }) {
       if (!pool) return
       const state = load()
       const exclude = new Set([...seenVideoIds(state), ...queue.map((v) => v.videoId)])
-      const [replacement] = pickForRung(pool, ladderState(state.reps).rungSec, exclude, 1)
+      const [replacement] = pickForRung(pool, ladderState(state.reps).rungSec, exclude, 1, {
+        reps: state.reps,
+        genres: state.genres,
+      })
       setQueue((q) => {
         const next = [...q]
         if (replacement) next[index] = replacement

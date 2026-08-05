@@ -42,10 +42,18 @@ export interface PoolVideo {
   channelTitle: string
   channelId: string
   publishedAt: string
+  /**
+   * Genres, copied from the channel's entry in content/channels.json. Optional
+   * because a pool harvested before tags existed must still work — untagged
+   * videos stay eligible rather than vanishing from the feed.
+   */
+  tags?: string[]
 }
 
 export interface Pool {
   generatedAt: string
+  /** Every genre present in this pool, for the picker to offer. */
+  topics?: string[]
   /** Keyed by rung target in seconds, e.g. "45". */
   rungs: Record<string, PoolVideo[]>
 }

@@ -108,7 +108,7 @@ async function recentVideoIds(playlistId, maxPages, key) {
  * app cannot actually play. Filtering here rather than in the browser means a
  * broken video never reaches a session and interrupts a rep.
  */
-async function enrich(ids, region, key) {
+async function enrich(ids, region, key, tags = []) {
   const keep = []
   for (let i = 0; i < ids.length; i += 50) {
     const batch = ids.slice(i, i + 50)
@@ -137,6 +137,9 @@ async function enrich(ids, region, key) {
         channelTitle: v.snippet.channelTitle,
         channelId: v.snippet.channelId,
         publishedAt: v.snippet.publishedAt,
+        // Genres come from the channel's entry in channels.json. Carried onto
+        // each video so the app can personalise without shipping that file.
+        tags,
       })
     }
   }
@@ -179,11 +182,11 @@ async function main() {
   const byId = new Map(existing.map((v) => [v.videoId, v]))
   const before = byId.size
 
-  for (const { handle } of config.channels) {
+  for (const { handle, tags = [] } of config.channels) {
     try {
       const { playlistId, title } = await uploadsPlaylistId(handle, key)
       const ids = await recentVideoIds(playlistId, maxPages, key)
-      const fresh = await enrich(ids, region, key)
+      const fresh = await enrich(ids, region, key, tags)
       let added = 0
       for (const v of fresh) {
         if (!byId.has(v.videoId)) added++
@@ -198,7 +201,8 @@ async function main() {
   }
 
   const videos = [...byId.values()]
-  const pool = { generatedAt: new Date().toISOString(), rungs: bucket(videos) }
+  const topics = [...new Set(videos.flatMap((v) => v.tags ?? []))].sort()
+  const pool = { generatedAt: new Date().toISOString(), topics, rungs: bucket(videos) }
 
   console.log(`\n${videos.length} videos in pool (+${videos.length - before} new)`)
   console.log(`${unitsSpent} of 10,000 daily quota units spent, 0 search calls\n`)

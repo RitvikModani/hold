@@ -1,5 +1,6 @@
-import type { Pool, PoolVideo } from './types'
+import type { Pool, PoolVideo, Rep } from './types'
 import { RUNGS, rungBand } from './ladder'
+import { type ChannelRecord, channelRecords, videoWeight, weightedSample } from './taste'
 
 export class PoolMissingError extends Error {
   constructor() {
@@ -25,15 +26,6 @@ export async function loadPool(): Promise<Pool> {
   return pool
 }
 
-function shuffle<T>(items: T[]): T[] {
-  const out = [...items]
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[out[i], out[j]] = [out[j], out[i]]
-  }
-  return out
-}
-
 /** The rung itself first, then its nearest neighbours, widening outward. */
 function orderByDistance(start: number): number[] {
   const order: number[] = [RUNGS[start]]
@@ -52,28 +44,64 @@ function orderByDistance(start: number): number[] {
  * serving something already watched, which would break both the distinct-video
  * promotion rule and any belief in the ceiling number.
  */
+export interface PickOptions {
+  /** History, used to favour channels you actually finish. */
+  reps?: Rep[]
+  /** Genres the user chose. Empty means no preference. */
+  genres?: string[]
+}
+
 export function pickForRung(
   pool: Pool,
   rungSec: number,
   exclude: Set<string>,
   count: number,
+  options: PickOptions = {},
 ): PoolVideo[] {
   const start = RUNGS.indexOf(rungSec as (typeof RUNGS)[number])
   const order = start === -1 ? [rungSec] : orderByDistance(start)
   const taken: PoolVideo[] = []
   const used = new Set(exclude)
 
+  const genres = new Set(options.genres ?? [])
+  const records = options.reps?.length
+    ? new Map<string, ChannelRecord>(
+        channelRecords(options.reps, indexById(pool)).map((r) => [r.channelId, r]),
+      )
+    : new Map<string, ChannelRecord>()
+
   for (const rung of order) {
     if (taken.length >= count) break
-    const bucket = pool.rungs[String(rung)] ?? []
-    for (const video of shuffle(bucket)) {
-      if (taken.length >= count) break
-      if (used.has(video.videoId)) continue
+    const candidates = (pool.rungs[String(rung)] ?? []).filter((v) => !used.has(v.videoId))
+    if (candidates.length === 0) continue
+
+    // Weighted rather than shuffled: chosen genres dominate, and channels you
+    // finish come up more often — but nothing is ever excluded outright, so
+    // the feed can still surprise you.
+    for (const video of weightedSample(
+      candidates,
+      (v) => videoWeight(v, records, { genres }),
+      count - taken.length,
+    )) {
       used.add(video.videoId)
       taken.push(video)
     }
   }
   return taken
+}
+
+let indexCache: { pool: Pool; map: Map<string, PoolVideo> } | null = null
+
+/** videoId -> video, so history can be attributed back to its channel. */
+export function indexById(pool: Pool): Map<string, PoolVideo> {
+  if (indexCache?.pool === pool) return indexCache.map
+  const map = new Map(
+    Object.values(pool.rungs)
+      .flat()
+      .map((v) => [v.videoId, v] as const),
+  )
+  indexCache = { pool, map }
+  return map
 }
 
 /** How much unseen material is left at a rung — drives the low-pool warning. */

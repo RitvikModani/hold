@@ -7,9 +7,11 @@ export interface Persisted {
   reps: Rep[]
   /** Videos YouTube refused to embed. Never served again. */
   blacklist: string[]
+  /** Genres the user picked. Empty means "no preference stated yet". */
+  genres: string[]
 }
 
-const EMPTY: Persisted = { version: 1, reps: [], blacklist: [] }
+const EMPTY: Persisted = { version: 1, reps: [], blacklist: [], genres: [] }
 
 /**
  * The log is append-only and every derived number is recomputed from it, so
@@ -26,6 +28,9 @@ export function load(): Persisted {
       version: 1,
       reps: parsed.reps,
       blacklist: Array.isArray(parsed.blacklist) ? parsed.blacklist : [],
+      // Absent in state saved before genres existed. Defaults rather than
+      // migrating, so an older log keeps working untouched.
+      genres: Array.isArray(parsed.genres) ? parsed.genres : [],
     }
   } catch {
     return { ...EMPTY }
@@ -73,9 +78,17 @@ export function clearAll(): void {
   }
 }
 
+export function setGenres(genres: string[]): Persisted {
+  const state = load()
+  const next: Persisted = { ...state, genres }
+  save(next)
+  return next
+}
+
 /** Demo and verification seam — lets the stats screens be checked at 0, 1 and 200 reps. */
 export function replaceAll(reps: Rep[]): Persisted {
-  const next: Persisted = { version: 1, reps, blacklist: [] }
+  const state = load()
+  const next: Persisted = { version: 1, reps, blacklist: [], genres: state.genres }
   save(next)
   return next
 }
