@@ -1,0 +1,27 @@
+{
+  "_comment": "Channels harvested for the pool. Handles are resolved to upload playlists at harvest time, so you never need to look up channel IDs. Add or remove freely — anything whose short uploads are worth 45-180 seconds of real attention.",
+  "region": "IN",
+  "maxPagesPerChannel": 4,
+  "channels": [
+    { "handle": "@veritasium", "tags": ["science"] },
+    { "handle": "@kurzgesagt", "tags": ["science", "animation"] },
+    { "handle": "@3blue1brown", "tags": ["maths"] },
+    { "handle": "@TedEd", "tags": ["explainer"] },
+    { "handle": "@SciShow", "tags": ["science"] },
+    { "handle": "@MinutePhysics", "tags": ["physics"] },
+    { "handle": "@minuteearth", "tags": ["earth"] },
+    { "handle": "@numberphile", "tags": ["maths"] },
+    { "handle": "@CGPGrey", "tags": ["explainer"] },
+    { "handle": "@TomScottGo", "tags": ["explainer"] },
+    { "handle": "@PracticalEngineeringChannel", "tags": ["engineering"] },
+    { "handle": "@RealEngineering", "tags": ["engineering"] },
+    { "handle": "@smartereveryday", "tags": ["science"] },
+    { "handle": "@SteveMould", "tags": ["physics"] },
+    { "handle": "@itsokaytobesmart", "tags": ["science"] },
+    { "handle": "@Wendoverproductions", "tags": ["geopolitics", "logistics"] },
+    { "handle": "@halfasinteresting", "tags": ["explainer"] },
+    { "handle": "@physicsgirl", "tags": ["physics"] },
+    { "handle": "@Computerphile", "tags": ["computing"] },
+    { "handle": "@BranchEducation", "tags": ["engineering"] }
+  ]
+}
