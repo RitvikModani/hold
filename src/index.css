@@ -150,6 +150,42 @@ body {
   animation: hold-rise 0.55s var(--ease-out-quint) both;
 }
 
+/*
+  The next reel arriving. Two identical keyframes so the animation can be
+  restarted by alternating between them — restarting via a changing React key
+  would rebuild the YouTube iframe, and a fresh cross-origin iframe loses the
+  user activation that lets playback start without another tap.
+*/
+@keyframes reel-in-a {
+  from {
+    transform: translateY(6%) scale(0.965);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes reel-in-b {
+  from {
+    transform: translateY(6%) scale(0.965);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.reel-a {
+  animation: reel-in-a 0.42s var(--ease-out-quint) both;
+}
+
+.reel-b {
+  animation: reel-in-b 0.42s var(--ease-out-quint) both;
+}
+
 /* Keyboard users must always be able to see where they are. */
 :focus-visible {
   outline: 2px solid var(--color-amber);

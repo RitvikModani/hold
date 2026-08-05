@@ -1,37 +1,26 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 /**
- * Thin wrapper over YouTube's official IFrame Player API.
+ * One persistent YouTube player for the whole session.
  *
- * Two behaviours matter more than the rest:
+ * The player is created once and later videos are swapped in with
+ * loadVideoById rather than by mounting a new iframe. That is not an
+ * optimisation — it is the only way autoplay works past the first rep. User
+ * activation from a tap does not propagate into a newly created cross-origin
+ * iframe, so a fresh player is treated as never having been touched and
+ * unmuted playback is blocked every single time. Reusing the same frame keeps
+ * the activation the first tap earned.
  *
- *  - The player is torn down the instant playback ends. YouTube's end screen
- *    (which `rel=0` has not fully suppressed since 2018) would otherwise offer
- *    a wall of thumbnails at exactly the moment the app is trying to hold
- *    attention. Unmounting first means it never renders.
- *
- *  - Not every video that reports itself as embeddable actually embeds. Error
- *    codes 101 and 150 mean the owner disallowed off-site playback, and they
- *    arrive only at play time. Those are surfaced so the caller can blacklist
- *    the video and move on without the user ever seeing a dead frame.
+ * It also means the frame never goes blank between reps, which is what lets
+ * the transition animate instead of flashing.
  */
 
 type Status = 'loading' | 'ready' | 'playing' | 'paused' | 'ended' | 'unplayable'
 
-/**
- * How long to wait for the player to say anything at all.
- *
- * A video can fail without ever firing onError — an invalid or withdrawn id
- * simply produces silence, no onReady and no error event. Without this the
- * session freezes on that rep with no way forward.
- */
-const LOAD_TIMEOUT_MS = 8000
-
-/** Synthetic code for "never loaded", distinct from YouTube's own 2/5/100/101/150. */
-export const ERR_TIMEOUT = -1
-
 interface Options {
   videoId: string
+  /** False for the first rep, which needs a real tap. True after that. */
+  autoplay: boolean
   onEnded: () => void
   onUnplayable: (code: number) => void
 }
@@ -40,6 +29,9 @@ interface YTPlayer {
   destroy: () => void
   playVideo: () => void
   pauseVideo: () => void
+  stopVideo: () => void
+  loadVideoById: (id: string) => void
+  cueVideoById: (id: string) => void
   getCurrentTime: () => number
   getDuration: () => number
 }
@@ -68,35 +60,39 @@ function loadIframeApi(): Promise<void> {
   return apiPromise
 }
 
-export function useYouTubePlayer({ videoId, onEnded, onUnplayable }: Options) {
+export function useYouTubePlayer({ videoId, autoplay, onEnded, onUnplayable }: Options) {
   const containerRef = useRef<HTMLDivElement>(null)
   const playerRef = useRef<YTPlayer | null>(null)
   const [status, setStatus] = useState<Status>('loading')
   const [currentSec, setCurrentSec] = useState(0)
   const [durationSec, setDurationSec] = useState(0)
 
-  // Held in refs so this effect never re-runs on a parent re-render and
-  // restarts the video mid-rep.
+  // Held in refs so the player is never rebuilt by a parent re-render.
   const endedRef = useRef(onEnded)
   const unplayableRef = useRef(onUnplayable)
+  const autoplayRef = useRef(autoplay)
+  const currentIdRef = useRef(videoId)
   endedRef.current = onEnded
   unplayableRef.current = onUnplayable
+  autoplayRef.current = autoplay
 
+  // Build the player exactly once. videoId is deliberately not a dependency.
   useEffect(() => {
     let cancelled = false
     let poll: number | undefined
+    let deadline: number | undefined
 
-    const deadline = window.setTimeout(() => {
+    deadline = window.setTimeout(() => {
       if (cancelled) return
       setStatus('unplayable')
-      unplayableRef.current(ERR_TIMEOUT)
-    }, LOAD_TIMEOUT_MS)
+      unplayableRef.current(-1)
+    }, 8000)
 
     loadIframeApi().then(() => {
       if (cancelled || !containerRef.current || !window.YT) return
 
-      const player = new window.YT.Player(containerRef.current, {
-        videoId,
+      playerRef.current = new window.YT.Player(containerRef.current, {
+        videoId: currentIdRef.current,
         playerVars: {
           controls: 0, // no scrub bar: you cannot skim your way through a rep
           rel: 0,
@@ -112,15 +108,11 @@ export function useYouTubePlayer({ videoId, onEnded, onUnplayable }: Options) {
             window.clearTimeout(deadline)
             playerRef.current = e.target
             setDurationSec(e.target.getDuration())
-            // Deliberately not auto-played. Browsers block unmuted autoplay
-            // without a gesture on the player itself, and muted playback is
-            // useless for videos whose whole content is someone talking.
             setStatus('ready')
             poll = window.setInterval(() => {
               const p = playerRef.current
               if (!p) return
               setCurrentSec(p.getCurrentTime())
-              // Duration can read 0 until metadata lands, which is after onReady.
               const d = p.getDuration()
               if (d > 0) setDurationSec(d)
             }, 250)
@@ -131,15 +123,15 @@ export function useYouTubePlayer({ videoId, onEnded, onUnplayable }: Options) {
             if (e.data === S.PLAYING) setStatus('playing')
             else if (e.data === S.PAUSED) setStatus('paused')
             else if (e.data === S.ENDED) {
+              // Not destroyed — the recall screen covers the frame, and the
+              // player has to survive to carry activation into the next rep.
+              // Stopping is enough to keep the end screen from painting.
               setStatus('ended')
-              // Tear down before anything else so the end screen never paints.
-              window.clearInterval(poll)
               try {
-                playerRef.current?.destroy()
+                playerRef.current?.stopVideo()
               } catch {
                 /* already gone */
               }
-              playerRef.current = null
               endedRef.current()
             }
           },
@@ -151,7 +143,6 @@ export function useYouTubePlayer({ videoId, onEnded, onUnplayable }: Options) {
           },
         },
       })
-      playerRef.current = player
     })
 
     return () => {
@@ -161,18 +152,34 @@ export function useYouTubePlayer({ videoId, onEnded, onUnplayable }: Options) {
       try {
         playerRef.current?.destroy()
       } catch {
-        // Already destroyed by the ENDED path.
+        /* already gone */
       }
       playerRef.current = null
     }
+  }, [])
+
+  // Swap the video inside the existing frame.
+  useEffect(() => {
+    if (currentIdRef.current === videoId) return
+    currentIdRef.current = videoId
+    const p = playerRef.current
+    if (!p) return
+
+    setCurrentSec(0)
+    setDurationSec(0)
+    setStatus(autoplayRef.current ? 'loading' : 'ready')
+    try {
+      // loadVideoById plays immediately; cueVideoById waits for a tap.
+      if (autoplayRef.current) p.loadVideoById(videoId)
+      else p.cueVideoById(videoId)
+    } catch {
+      setStatus('unplayable')
+      unplayableRef.current(-1)
+    }
   }, [videoId])
 
-  return {
-    containerRef,
-    status,
-    currentSec,
-    durationSec,
-    pause: () => playerRef.current?.pauseVideo(),
-    play: () => playerRef.current?.playVideo(),
-  }
+  const play = useCallback(() => playerRef.current?.playVideo(), [])
+  const pause = useCallback(() => playerRef.current?.pauseVideo(), [])
+
+  return { containerRef, status, currentSec, durationSec, play, pause }
 }

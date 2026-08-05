@@ -99,42 +99,51 @@ export function Session({ onExit }: { onExit: () => void }) {
   if (phase === 'loading') return <SessionSkeleton />
   if (phase === 'nopool') return <NoPool onExit={onExit} />
   if (phase === 'done') return <Complete reps={completed} onExit={onExit} />
-  if (phase === 'ceiling')
-    return <NewCeiling sec={ceilingRef.current} onContinue={() => advance(completed.length)} />
   if (!video) return <Complete reps={completed} onExit={onExit} />
 
-  if (phase === 'recall' || phase === 'reveal') {
-    return (
-      <Recall
-        video={video}
-        phase={phase}
-        text={recallText}
-        onText={setRecallText}
-        onSubmit={() => setPhase('reveal')}
-        onGrade={(grade) => {
-          if (pendingRep) finishRep({ ...pendingRep, recallText, recallGrade: grade })
-        }}
-      />
-    )
-  }
-
+  // Watch stays mounted for the whole session — unmounting it would destroy
+  // the iframe, and with it the user activation that lets rep two onward play
+  // without another tap. Recall and the ceiling moment sit on top instead.
   return (
-    <Watch
-      key={video.videoId}
-      video={video}
-      rungSec={rungSec}
-      repNumber={completed.length + 1}
-      ceilingSec={ceilingRef.current}
-      autoStart={autoStart}
-      onStarted={() => setAutoStart(true)}
-      onExit={onExit}
-      onUnplayable={() => replaceUnplayable(video.videoId)}
-      onFinish={(rep) => {
-        setPendingRep(rep)
-        setPhase('recall')
-      }}
-      onSkip={finishRep}
-    />
+    <div className="relative h-full w-full overflow-hidden">
+      <Watch
+        video={video}
+        rungSec={rungSec}
+        repNumber={Math.min(completed.length + 1, REPS_PER_SESSION)}
+        ceilingSec={ceilingRef.current}
+        autoplay={autoStart}
+        paused={phase !== 'watching'}
+        onStarted={() => setAutoStart(true)}
+        onExit={onExit}
+        onUnplayable={() => replaceUnplayable(video.videoId)}
+        onFinish={(rep) => {
+          setPendingRep(rep)
+          setPhase('recall')
+        }}
+        onSkip={finishRep}
+      />
+
+      {(phase === 'recall' || phase === 'reveal') && (
+        <div className="rise absolute inset-0 z-30 bg-[var(--color-void)]">
+          <Recall
+            video={video}
+            phase={phase}
+            text={recallText}
+            onText={setRecallText}
+            onSubmit={() => setPhase('reveal')}
+            onGrade={(grade) => {
+              if (pendingRep) finishRep({ ...pendingRep, recallText, recallGrade: grade })
+            }}
+          />
+        </div>
+      )}
+
+      {phase === 'ceiling' && (
+        <div className="absolute inset-0 z-40 bg-[var(--color-void)]">
+          <NewCeiling sec={ceilingRef.current} onContinue={() => advance(completed.length)} />
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -145,7 +154,8 @@ function Watch({
   rungSec,
   repNumber,
   ceilingSec,
-  autoStart,
+  autoplay,
+  paused,
   onStarted,
   onFinish,
   onSkip,
@@ -156,7 +166,8 @@ function Watch({
   rungSec: number
   repNumber: number
   ceilingSec: number
-  autoStart: boolean
+  autoplay: boolean
+  paused: boolean
   onStarted: () => void
   onFinish: (rep: Rep) => void
   onSkip: (rep: Rep) => void
@@ -189,24 +200,39 @@ function Watch({
 
   const player = useYouTubePlayer({
     videoId: video.videoId,
+    autoplay,
     onEnded: () => onFinish(baseRep(video, rungSec, watchedRef.current, null, driftRef.current)),
     onUnplayable,
   })
 
-  const drift = useDriftDetector(() => watchedRef.current, true)
+  // Watch no longer remounts between reps, so per-video state has to be reset
+  // by hand. `slide` flips 0/1 to restart the entry animation without a
+  // remount — a changing key would rebuild the iframe and undo the whole fix.
+  const [slide, setSlide] = useState(0)
+
+  const drift = useDriftDetector(() => watchedRef.current, !paused)
   driftRef.current = drift.driftEvents
   watchedRef.current = Math.max(watchedRef.current, player.currentSec)
+
+  // Watch no longer remounts between reps, so per-video state is reset by hand.
+  // `slide` flips 0/1 to restart the entry animation without a remount — a
+  // changing key would rebuild the iframe and undo the autoplay fix.
+  useEffect(() => {
+    watchedRef.current = 0
+    setSkipGate(null)
+    drift.reset()
+    setSlide((s) => (s === 0 ? 1 : 0))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [video.videoId])
 
   const duration = player.durationSec || video.durationSec
   const progress = duration > 0 ? player.currentSec / duration : 0
 
-  // Once the page has been activated by a real tap, later reps start by
-  // themselves. Tapping begin before every single video was the most tedious
-  // thing about using this.
+  // Nothing should still be playing behind the recall prompt.
   useEffect(() => {
-    if (autoStart && player.status === 'ready') player.play()
+    if (paused) player.pause()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoStart, player.status])
+  }, [paused])
 
   useEffect(() => {
     if (player.status === 'playing') onStarted()
@@ -351,7 +377,7 @@ function Watch({
               video's real orientation so the content is always the biggest
               thing on the page. */}
           <div
-            className="relative h-full overflow-hidden rounded-2xl bg-black shadow-2xl shadow-black/70 ring-1 ring-white/10"
+            className={`relative h-full overflow-hidden rounded-2xl bg-black shadow-2xl shadow-black/70 ring-1 ring-white/10 ${slide === 0 ? 'reel-a' : 'reel-b'}`}
             style={{
               aspectRatio: portrait ? '9 / 16' : '16 / 9',
               maxWidth: '100%',
