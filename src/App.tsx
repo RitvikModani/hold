@@ -1,9 +1,21 @@
-import { useState } from 'react'
+import { Suspense, lazy, useState } from 'react'
 import { Home } from './features/Home'
 import { Session } from './features/Session'
-import { Cockpit } from './features/Cockpit'
-import { Leaderboard } from './features/Leaderboard'
 import { seedFromQueryString } from './lib/seed'
+import { StatsSkeleton } from './components/ui'
+
+/**
+ * Stats and the leaderboard are split out of the initial bundle.
+ *
+ * Between them they pull in the chart set and the whole Supabase client, none
+ * of which is needed to open the app and start a session — the one path that
+ * has to feel instant. An attention trainer that makes you wait is arguing
+ * against itself.
+ */
+const Cockpit = lazy(() => import('./features/Cockpit').then((m) => ({ default: m.Cockpit })))
+const Leaderboard = lazy(() =>
+  import('./features/Leaderboard').then((m) => ({ default: m.Leaderboard })),
+)
 
 type Route = 'home' | 'session' | 'stats' | 'board'
 
@@ -27,8 +39,19 @@ export default function App() {
       />
     )
 
-  if (route === 'stats') return <Cockpit key={rev} onBack={home} />
-  if (route === 'board') return <Leaderboard key={rev} onBack={home} />
+  if (route === 'stats')
+    return (
+      <Suspense fallback={<StatsSkeleton />}>
+        <Cockpit key={rev} onBack={home} />
+      </Suspense>
+    )
+
+  if (route === 'board')
+    return (
+      <Suspense fallback={<StatsSkeleton />}>
+        <Leaderboard key={rev} onBack={home} />
+      </Suspense>
+    )
 
   return (
     <Home

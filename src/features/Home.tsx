@@ -1,9 +1,11 @@
-import { useMemo } from 'react'
+import { Suspense, lazy, useMemo } from 'react'
 import { PROMOTE_AFTER, RUNGS, ladderState } from '../lib/ladder'
 import { currentStreakDays, driftRatePerMin, totalFocusedMinutes } from '../lib/stats'
 import { load } from '../lib/store'
 import { Button, Screen, fmtDuration } from '../components/ui'
-import { SyncNudge } from './Sync'
+// Lazy so the Supabase client stays out of the entry chunk. This is one
+// optional line of text on the home screen; it is not worth 55 kB on first load.
+const SyncNudge = lazy(() => import('./Sync').then((m) => ({ default: m.SyncNudge })))
 
 export function Home({
   onStart,
@@ -52,7 +54,9 @@ export function Home({
                 Leaderboard
               </Button>
             </div>
-            <SyncNudge repCount={state.reps.length} streakDays={streak} />
+            <Suspense fallback={null}>
+              <SyncNudge repCount={state.reps.length} streakDays={streak} />
+            </Suspense>
           </div>
         </div>
 
