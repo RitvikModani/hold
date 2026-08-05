@@ -26,5 +26,6 @@ dist-ssr
 # secrets
 .env
 
-# generated content pool
-public/content/pool.json
+# The harvested pool IS committed. It is generated, but it is also the app's
+# content — without it a deployed build has nothing to play. ~310K, 41K gzipped.
+# Re-run `npm run harvest` to refresh it.
