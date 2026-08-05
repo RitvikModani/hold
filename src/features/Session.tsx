@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { animate, motion, useMotionValue, useTransform } from 'motion/react'
 import type { Pool, PoolVideo, RecallGrade, Rep } from '../lib/types'
 import { MIN_RECALL_CHARS, RUNGS, isSuccess, ladderState } from '../lib/ladder'
 import { appendRep, blacklistVideo, load, newRepId, seenVideoIds } from '../lib/store'
@@ -8,9 +9,15 @@ import { useDriftDetector } from '../hooks/useDriftDetector'
 import { Button, ProgressRing, SessionSkeleton, fmtDuration } from '../components/ui'
 
 const REPS_PER_SESSION = 5
-const SKIP_GATE_SEC = 5
-const SWIPE_THRESHOLD_PX = 60
+/** How far the card must travel before releasing dismisses it. */
+const DRAG_DISMISS_PX = 130
 const WHEEL_THRESHOLD = 40
+/**
+ * You cannot bail in the first two seconds. Short enough that it never feels
+ * like a wall, long enough that leaving is a decision rather than a reflex —
+ * which is the whole reason skipping costs anything at all.
+ */
+const SKIP_LOCK_SEC = 2
 
 type Phase = 'loading' | 'nopool' | 'watching' | 'recall' | 'reveal' | 'ceiling' | 'done'
 
@@ -174,10 +181,8 @@ function Watch({
   onUnplayable: () => void
   onExit: () => void
 }) {
-  const [skipGate, setSkipGate] = useState<number | null>(null)
   const watchedRef = useRef(0)
   const driftRef = useRef<Rep['driftEvents']>([])
-  const touchStartY = useRef<number | null>(null)
   const wheelLock = useRef(false)
   // Most of the pool is Shorts, because 36-180s is exactly the Shorts range.
   // A vertical video inside a 16:9 frame pillarboxes into a sliver, so the
@@ -205,28 +210,83 @@ function Watch({
     onUnplayable,
   })
 
-  // Watch no longer remounts between reps, so per-video state has to be reset
-  // by hand. `slide` flips 0/1 to restart the entry animation without a
-  // remount — a changing key would rebuild the iframe and undo the whole fix.
-  const [slide, setSlide] = useState(0)
+  /*
+   * Shorts-style dismissal. The card tracks the pointer, and past a threshold
+   * (or a hard flick) it carries on out and the next reel rises in behind it;
+   * short of that it springs back.
+   *
+   * The rep is still recorded as skipped. The friction moved from a countdown
+   * to the gesture itself — you have to mean it to travel 130px — but leaving
+   * early still costs you the rep and still shows up in your completion rate.
+   */
+  const y = useMotionValue(0)
+  const dragOpacity = useTransform(y, [-320, -90, 0, 90], [0, 0.72, 1, 0.72])
+  const dragScale = useTransform(y, [-320, 0, 320], [0.9, 1, 0.9])
+  const leaving = useRef(false)
+  // skipRep is declared below; the ref keeps advanceOut out of its shadow.
+  const skipRepRef = useRef<() => void>(() => {})
+
+  const springBack = useCallback(() => {
+    animate(y, 0, { type: 'spring', stiffness: 420, damping: 38 })
+  }, [y])
 
   const drift = useDriftDetector(() => watchedRef.current, !paused)
   driftRef.current = drift.driftEvents
   watchedRef.current = Math.max(watchedRef.current, player.currentSec)
 
   // Watch no longer remounts between reps, so per-video state is reset by hand.
-  // `slide` flips 0/1 to restart the entry animation without a remount — a
-  // changing key would rebuild the iframe and undo the autoplay fix.
+  // The next reel rises into place through the same motion value the drag
+  // uses, so the two can never fight over transform.
   useEffect(() => {
     watchedRef.current = 0
-    setSkipGate(null)
     drift.reset()
-    setSlide((s) => (s === 0 ? 1 : 0))
+    y.set(44)
+    animate(y, 0, { type: 'spring', stiffness: 320, damping: 34 })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [video.videoId])
 
   const duration = player.durationSec || video.durationSec
   const progress = duration > 0 ? player.currentSec / duration : 0
+
+  const advanceOut = useCallback(() => {
+    if (leaving.current) return
+    if (watchedRef.current < SKIP_LOCK_SEC) {
+      springBack()
+      return
+    }
+    leaving.current = true
+    animate(y, -window.innerHeight * 0.55, {
+      duration: 0.26,
+      ease: [0.32, 0, 0.67, 0],
+    }).then(() => {
+      skipRepRef.current()
+      // Reset below the fold so the next reel rises into place.
+      y.set(40)
+      animate(y, 0, { type: 'spring', stiffness: 320, damping: 34 })
+      leaving.current = false
+    })
+  }, [y, springBack])
+
+  const releaseDrag = (offsetY: number, velocityY: number) => {
+    if (offsetY < -DRAG_DISMISS_PX || velocityY < -650) advanceOut()
+    else springBack()
+  }
+
+  // Trackpad and keyboard get the same exit, so the laptop is not second-class.
+  const onWheel = (e: React.WheelEvent) => {
+    if (wheelLock.current || e.deltaY < WHEEL_THRESHOLD) return
+    wheelLock.current = true
+    advanceOut()
+    setTimeout(() => (wheelLock.current = false), 700)
+  }
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') advanceOut()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [advanceOut])
 
   // Nothing should still be playing behind the recall prompt.
   useEffect(() => {
@@ -239,44 +299,6 @@ function Watch({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [player.status])
 
-  const requestSkip = useCallback(() => {
-    setSkipGate((s) => (s === null ? SKIP_GATE_SEC : s))
-  }, [])
-
-  useEffect(() => {
-    if (skipGate === null || skipGate <= 0) return
-    const t = setTimeout(() => setSkipGate((s) => (s === null ? null : s - 1)), 1000)
-    return () => clearTimeout(t)
-  }, [skipGate])
-
-  // Advance works by touch, trackpad and keyboard. It was touch-only, which
-  // meant it silently did nothing on a laptop.
-  const onTouchStart = (e: React.TouchEvent) => {
-    touchStartY.current = e.touches[0].clientY
-  }
-  const onTouchEnd = (e: React.TouchEvent) => {
-    if (touchStartY.current === null) return
-    const travelled = touchStartY.current - e.changedTouches[0].clientY
-    touchStartY.current = null
-    if (travelled > SWIPE_THRESHOLD_PX) requestSkip()
-  }
-  const onWheel = (e: React.WheelEvent) => {
-    if (wheelLock.current || Math.abs(e.deltaY) < WHEEL_THRESHOLD) return
-    if (e.deltaY > 0) {
-      wheelLock.current = true
-      requestSkip()
-      setTimeout(() => (wheelLock.current = false), 600)
-    }
-  }
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowDown' || e.key === 'PageDown') requestSkip()
-      if (e.key === 'Escape') setSkipGate(null)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [requestSkip])
-
   const skipRep = () =>
     onSkip(
       baseRep(
@@ -287,14 +309,10 @@ function Watch({
         driftRef.current,
       ),
     )
+  skipRepRef.current = skipRep
 
   return (
-    <div
-      className="flex h-full w-full overflow-hidden"
-      onTouchStart={onTouchStart}
-      onTouchEnd={onTouchEnd}
-      onWheel={onWheel}
-    >
+    <div className="flex h-full w-full overflow-hidden" onWheel={onWheel}>
       {/* Laptop-only rail. On a phone this is hidden and the video owns the
           screen; on a wide display the empty flanks become the instrument
           panel instead of dead margin. */}
@@ -376,22 +394,34 @@ function Watch({
               collapsed to a sliver on wide screens. The frame follows the
               video's real orientation so the content is always the biggest
               thing on the page. */}
-          <div
-            className={`relative h-full overflow-hidden rounded-2xl bg-black shadow-2xl shadow-black/70 ring-1 ring-white/10 ${slide === 0 ? 'reel-a' : 'reel-b'}`}
+          <motion.div
+            drag="y"
+            dragDirectionLock
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={{ top: 0.85, bottom: 0.14 }}
+            dragMomentum={false}
+            onDragEnd={(_, info) => releaseDrag(info.offset.y, info.velocity.y)}
+            /* No CSS animation class here on purpose: animation-fill-mode
+               would pin transform and silently override the drag. The entry
+               is animated through the same motion value instead. */
+            className="relative h-full touch-none overflow-hidden rounded-2xl bg-black shadow-2xl shadow-black/70 ring-1 ring-white/10"
             style={{
+              y,
+              opacity: dragOpacity,
+              scale: dragScale,
               aspectRatio: portrait ? '9 / 16' : '16 / 9',
               maxWidth: '100%',
               maxHeight: '100%',
             }}
           >
-            <div ref={player.containerRef} className="h-full w-full" />
+            <div ref={player.containerRef} className="pointer-events-none h-full w-full" />
 
             {/* Sits over the iframe while it plays. Touches on an iframe never
                 reach the parent, so without this the gesture would only work
                 on the surrounding chrome. It also stops a stray tap surfacing
                 YouTube's own title, share and watch-on-YouTube controls. */}
-            {player.status === 'playing' && (
-              <div className="absolute inset-0" onWheel={onWheel} aria-hidden />
+            {(player.status === 'playing' || player.status === 'paused') && (
+              <div className="absolute inset-0" aria-hidden />
             )}
 
             {player.status !== 'playing' && player.status !== 'paused' && (
@@ -414,37 +444,19 @@ function Watch({
                 )}
               </button>
             )}
-          </div>
+          </motion.div>
         </div>
 
         <footer className="relative px-5 pt-2 pb-8 lg:px-8">
           <div className="label mb-3 text-center lg:hidden">
             rep {repNumber} of {REPS_PER_SESSION}
           </div>
-          {skipGate === null ? (
-            <button
-              onClick={requestSkip}
-              className="mx-auto block cursor-pointer py-2 text-center text-xs text-[var(--color-ink-faint)] transition hover:text-[var(--color-ink-dim)]"
-            >
-              skip
-            </button>
-          ) : (
-            <div className="rise mx-auto max-w-sm space-y-3 text-center">
-              <p className="text-sm text-[var(--color-ink-dim)]">
-                {skipGate > 0
-                  ? 'Sit with it for a moment.'
-                  : 'Still want out? This goes down as a miss.'}
-              </p>
-              <div className="flex gap-2">
-                <Button full onClick={() => setSkipGate(null)}>
-                  Stay
-                </Button>
-                <Button full variant="quiet" disabled={skipGate > 0} onClick={skipRep}>
-                  {skipGate > 0 ? `skip in ${skipGate}` : 'Skip anyway'}
-                </Button>
-              </div>
-            </div>
-          )}
+          <button
+            onClick={advanceOut}
+            className="mx-auto block cursor-pointer py-2 text-center text-xs text-[var(--color-ink-faint)] transition hover:text-[var(--color-ink-dim)]"
+          >
+            swipe up to skip &middot; costs the rep
+          </button>
         </footer>
       </main>
     </div>
