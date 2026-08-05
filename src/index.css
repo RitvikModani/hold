@@ -1,18 +1,22 @@
 @import 'tailwindcss';
+@import '@fontsource-variable/inter';
 
 /*
   Two moods, one system.
 
-  Watching: the interface gets out of the way entirely — near-black, no chrome,
-  a single hairline ring. Stats: dense instrument panel, tabular numerals, the
-  feel of a training log rather than a dashboard.
+  Watching: the interface gets out of the way — near-black, no chrome, a single
+  hairline ring, and a blurred still of the video itself filling what would
+  otherwise be dead letterbox bars. Stats: dense instrument panel, tabular
+  numerals, the feel of a training log rather than a dashboard.
 
-  One chromatic colour only. Amber carries every signal that matters; failure is
-  shown by things going hollow and grey, not by turning red. Restraint is what
-  keeps this from looking like every other dark-mode app.
+  One chromatic colour only. Amber carries every signal that matters; failure
+  shows as things going hollow and grey, never red. That restraint is what
+  keeps this from looking like every other dark-mode app — and a tool whose
+  whole argument is against manufactured stimulation should not itself be
+  visually shouting.
 
-  No webfonts on purpose: instant paint, works offline, nothing to load at a
-  moment where a loading spinner would undercut the point of the app.
+  Inter is self-hosted rather than pulled from a CDN: it renders instantly,
+  survives offline, and a font loading late would undercut the point of the app.
 */
 
 @theme {
@@ -24,14 +28,14 @@
 
   --color-ink: #f4f4f6;
   --color-ink-dim: #9a9aa6;
-  --color-ink-faint: #5c5c68;
+  --color-ink-faint: #6a6a78;
 
   --color-amber: #ffb703;
   --color-amber-dim: #8a6410;
 
   --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Segoe UI Mono', Menlo, Consolas,
     monospace;
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -47,6 +51,7 @@ body {
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   overscroll-behavior: none;
 }
 
@@ -65,6 +70,10 @@ body {
   color: var(--color-ink-faint);
 }
 
+.hairline {
+  border: 1px solid var(--color-line);
+}
+
 /* Faint scanline wash. Sells the instrument-panel read without costing legibility. */
 .panel {
   background:
@@ -77,6 +86,36 @@ body {
       transparent 3px
     );
   background-blend-mode: overlay;
+}
+
+/* Loading placeholder: a band of light travelling left to right across the
+   element's real footprint, so nothing shifts when content arrives. */
+.shimmer {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+.shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(255 255 255 / 0.04) 45%,
+    rgb(255 255 255 / 0.07) 50%,
+    rgb(255 255 255 / 0.04) 55%,
+    transparent 100%
+  );
+  animation: shimmer-sweep 1.6s var(--ease-out-quint) infinite;
+}
+
+@keyframes shimmer-sweep {
+  to {
+    transform: translateX(100%);
+  }
 }
 
 @keyframes hold-rise {
@@ -94,11 +133,18 @@ body {
   animation: hold-rise 0.5s var(--ease-out-quint) both;
 }
 
+/* Keyboard users must always be able to see where they are. */
+:focus-visible {
+  outline: 2px solid var(--color-amber);
+  outline-offset: 2px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
 }
